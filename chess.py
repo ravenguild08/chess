@@ -14,6 +14,33 @@ import string
 BPawn, BBishop, BKnight, BRook, BQueen, BKing, No, WKing, WQueen, WRook, WKnight, WBishop, WPawn = range(-6, 7)
 King, Queen, Rook, Knight, Bishop, Pawn = range(1, 7)
 B, W = [-1, 1]
+def parse_x_char(c):
+    return "abcdefgh".find(c)
+def parse_y_char(c):
+    return int(c) - 1
+def parse_id_char(c):
+    result = "KQRNBabcdefgh".find(c) + 1
+    if result == 0:
+        raise ValueError
+    elif result >= 6:
+        return Pawn
+    else:
+        return result
+def x_char(x):
+    return "abcdefgh"[x]
+def y_char(y):
+    return str(y + 1)
+def unit_char(unit):
+    letters = ["K", "Q", "R", "N", "B", "P"]
+    return letters[abs(unit) - 1]
+def team_string(team):
+    if team == W:
+        return "White"
+    elif team == B:
+        return "Black"
+    else:
+        return ""
+    
 
 class MoveError(Exception):
     def __init__(self, value):
@@ -30,7 +57,13 @@ class Space():
         self.nDiag = [[],[],[],[]]
         self.nKnight = []
         self.unit = No
-        self.moves = []
+        self.moves = [] # list of moves        
+        self.protects = [] # list of friendly pieces who if captured can be avenged
+        self.protectedBy = [] # list of friendly pieces who protects self
+        self.canMoveTo = [] # list of pieces who can move to self
+        self.threatens = [] # list of pieces who self can capture
+        self.threatenedBy = [] # list of pieces who can capture self
+        
     def add_iff_legal(self, x, y):
         if x >= 0 and x < 8 and y >= 0 and y < 8:
             self.nKnight.append(self.board[x][y])
@@ -89,71 +122,103 @@ class Space():
             return W
         else:
             return 0
-        
-    def add_first_moves(self, arr, list):
+    
+    def mark_move(self, space):
+        self.moves.append(space)
+        space.canMoveTo.append(self)
+    def mark_protect(self, space):
+        self.protects.append(space)
+        space.protectedBy.append(self)
+    def mark_threaten(self, space):
+        self.threatens.append(space)
+        space.threatenedBy.append(self)
+    def add_first_moves(self, arr):
         if not arr:
-            return list
+            return
         team = self.get_team()
         space = arr[0]
         spaceTeam = space.get_team()
         if team == spaceTeam:
-            return list
+            self.mark_protect(space)
         elif team == -spaceTeam:
-            return list.append(space)
+            self.mark_move(space)
+            self.mark_threaten(space)
         else:
-            return list.append(space)
-    def add_row_moves(self, arr, list):
+            self.mark_move(space)
+            self.mark_threaten(space)
+    def add_row_moves(self, arr):
         if not arr:
-            return list
+            return
         team = self.get_team()
         for space in arr:
             spaceTeam = space.get_team()
             if team == spaceTeam:
-                return list
+                self.mark_protect(space)
+                return
             elif team == -spaceTeam:
-                list.append(space)
-                return list
+                self.mark_move(space)
+                self.mark_threaten(space)
+                return
             else:
-                list.append(space)
-        return list
+                self.mark_move(space)
+                self.mark_threaten(space)
+        return
     def get_moves(self):
-        list = []
-        if self.unit == No:
-            return list
-        elif abs(self.unit) == King:
+        unit = abs(self.unit)
+        if unit == No:
+            return
+        elif unit == King:
             for i in range(4):
-                self.add_first_moves(self.nHoriz[i], list)
-                self.add_first_moves(self.nDiag[i], list)
+                self.add_first_moves(self.nHoriz[i])
+                self.add_first_moves(self.nDiag[i])
             # TODO: castle
-        elif abs(self.unit) == Queen:
+        elif unit == Queen:
             for i in range(4):
-                self.add_row_moves(self.nHoriz[i], list)
-                self.add_row_moves(self.nDiag[i], list)
-        elif abs(self.unit) == Rook:
+                self.add_row_moves(self.nHoriz[i])
+                self.add_row_moves(self.nDiag[i])
+        elif unit == Rook:
             for i in range(4):
-                self.add_row_moves(self.nHoriz[i], list)
-        elif abs(self.unit) == Knight:
+                self.add_row_moves(self.nHoriz[i])
+        elif unit == Knight:
             team = self.get_team()
-            for space in self.nKnight:                
-                if team != space.get_team():
-                    list.append(space)
-        elif abs(self.unit) == Bishop:
+            for space in self.nKnight:
+                spaceTeam = space.get_team()
+                if team == spaceTeam:
+                    self.mark_protect(space)
+                elif team == -spaceTeam:
+                    self.mark_move(space)
+                    self.mark_threaten(space)
+                else:
+                    self.mark_move(space)
+                    self.mark_threaten(space)
+        elif unit == Bishop:
             for i in range(4):
-                self.add_row_moves(self.nDiag[i], list)
+                self.add_row_moves(self.nDiag[i])
         elif self.unit == WPawn:
             if self.y == 7:
                 # TODO: promote
                 
                 return []
             if self.board[self.x][self.y + 1].unit == No:
-                list.append(self.board[self.x][self.y + 1])
+                self.mark_move(self.board[self.x][self.y + 1])
                 if self.y == 1 and self.board[self.x][3].unit == No:
-                    list.append(self.board[self.x][3])
-            if self.x < 7 and self.board[self.x + 1][self.y + 1].get_team() == B:
-                list.append(self.board[self.x + 1][self.y + 1])
-            if self.x > 0 and self.board[self.x - 1][self.y + 1].get_team() == B:
-                list.append(self.board[self.x - 1][self.y + 1])
-            # TODO: en pessant
+                    self.mark_move(self.board[self.x][3])
+            diagonals = []
+            if self.x > 0:
+                diagonals.append(self.board[self.x - 1][self.y + 1])
+            if self.x < 7:
+                diagonals.append(self.board[self.x + 1][self.y + 1])
+            for space in diagonals:
+                spaceTeam = space.get_team()
+                if spaceTeam == B:
+                    self.mark_move(space)
+                    self.mark_threaten(space)
+                elif spaceTeam == W:
+                    self.mark_protect(space)
+                else:
+                    self.mark_threaten(space)
+
+            # TODO: en passant
             
         elif self.unit == BPawn:
             if self.y == 0:
@@ -161,36 +226,41 @@ class Space():
                 
                 return []
             if self.board[self.x][self.y - 1].unit == No:
-                list.append(self.board[self.x][self.y - 1])
+                self.mark_move(self.board[self.x][self.y - 1])
                 if self.y == 6 and self.board[self.x][4].unit == No:
-                    list.append(self.board[self.x][4])
-            if self.x < 7 and self.board[self.x + 1][self.y - 1].get_team() == W:
-                list.append(self.board[self.x + 1][self.y - 1])
-            if self.x > 0 and self.board[self.x - 1][self.y - 1].get_team() == W:
-                list.append(self.board[self.x - 1][self.y - 1])
+                    self.mark_move(self.board[self.x][4])
+            diagonals = []
+            if self.x > 0:
+                diagonals.append(self.board[self.x - 1][self.y - 1])
+            if self.x < 7:
+                diagonals.append(self.board[self.x + 1][self.y - 1])
+            for space in diagonals:
+                spaceTeam = space.get_team()
+            for space in diagonals:
+                spaceTeam = space.get_team()
+                if spaceTeam == W:
+                    self.mark_move(space)
+                    self.mark_threaten(space)
+                elif spaceTeam == B:
+                    self.mark_protect(space)
+                else:
+                    self.mark_threaten(space)
+
             # TODO: en pessant
             
-        # TODO: check avoiding
-        self.moves = list
-        return list
+        return self.moves
 
     def coord_string(self):    
-        return "abcdefgh"[self.x] + str(self.y + 1)
-    def x_string(self):
-        return "abcdefgh"[self.x]
-    def y_string(self):
-        return str(self.y + 1)
-    def id_string(self):
-        letters = ["K", "Q", "R", "N", "B", "P"]
-        return letters[abs(self.unit) - 1]
+        return x_char(self.x) + y_char(self.y)
     def unit_string(self):
         if self.unit == 0:
             return "  "
         elif self.unit < 0:
-            return " " + self.id_string()
+            return " " + unit_char(self.unit)
         else:
-            return self.id_string() + " "
-
+            return unit_char(self.unit) + " "
+    def unit_char(self):
+        return unit_char(self.unit)
 
 class Game():
     def __init__(self):
@@ -232,7 +302,7 @@ class Game():
         if team == W:
             self.white[index].remove(space)
         elif team == B:
-            self.black[index].append(space)
+            self.black[index].remove(space)
         space.unit = No        
         return
     def fill_board(self):
@@ -272,6 +342,19 @@ class Game():
         print " "
         return
 
+    def update_moves(self):
+        for i in range(8):
+            for j in range(8):
+                space = self.b[i][j]
+                space.moves = []
+                space.threatens = []
+                space.protects = []
+                space.protectedBy = []
+                space.canMoveTo = []
+                space.threatenedBy = []
+        for i in range(8):
+            for j in range(8):
+                self.b[i][j].get_moves()
     def undo_move(self):
         if self.count == 0:
             raise MoveError("there are no more moves to undo!")
@@ -285,151 +368,169 @@ class Game():
             self.put(unit, loc)
         self.log.pop()
         return
-        
-    def parse_move_string(self, s):
-        turn = self.whose_turn()
-        team = self.black
-        if turn == W:
-            team = self.white
-
-        if s == "O-O" or s == "0-0":
-            # kingside castle
-            return
-        elif s == "O-O-O" or s == "0-0-0":
-            # queenside castle
-            return
-            
-        if len(s) == 2:
-            # pawn moving forward
-            try:
-                space = self.parse_coord_string(s)
-            except ValueError:
-                raise MoveError("that's not a coordinate!")
-            unit = Pawn
-            col = space.x
-        else:
-            try:
-                unit = self.parse_id_char(s[0])
-                if unit == Pawn:
-                    col = "abcdefgh".find(s[0])
-                    print col
-            except ValueError:
-                raise MoveError("first letter not recognized")            
-            index = len(s) - 1
-            while index >= 1:
-                index -= 1
-                try:
-                    space = self.parse_coord_string(s[index:(index + 2)])
-                    break
-                except ValueError:
-                    if index == 1:
-                        raise MoveError("couldn't find a coordinate!")
-        print space.coord_string()
-        print unit
-        
-        # attempt to find the piece that wants to move there
-        if unit == Pawn:
-            count = 0
-            for guy in team[Pawn]:
-                if guy.x == col and space in guy.get_moves():
-                    piece = guy
-                    count += 1
-                    break
-            if count == 0:
-                raise MoveError("no such move is possible!")
-        else:
-            count = 0
-            for guy in team[unit]:
-                if space in guy.get_moves():
-                    piece = guy
-                    print "found piece at " + piece.coord_string()
-                    count += 1
-            if count > 1:
-                # TODO: ambiguity decoding
-                print "it's ambiguous! until i implement it, you don't get to choose..."
-            if count == 0:
-                raise MoveError("no such move is possible!")
-                
-        """
-        if piece.unit == No:
-            raise MoveError("there is no piece there!")
-        if self.whose_turn() == W and piece.get_team() == B or self.whose_turn() == B and piece.get_team() == W:
-            raise MoveError("that's not your piece!")
-        if space not in piece.get_moves(): # careful... do we want to rerun?
-            raise MoveError("that piece can't move there!")
-        """
-        
-        # remember if it's a capture
+   
+    # takes a string and attempts to parse it and execute it
+    # raises MoveError if string can't be parsed or move isn't legal
+    def execute_move(self, s):
+        if len(s) < 2:
+            raise MoveError("algebraic notation needs at least two characters!")
         capture = False
-        # enpassant, kingcastle, queencastle, promotion
+        check = False
+        mate = False
+        promotion = False
+        ambiguity = ""
+        promotion = No
+        
+        turn = self.whose_turn()
+        army = self.black
+        if turn == W:
+            army = self.white
+
+        # kingside castle
+        if s == "O-O" or s == "0-0":
+            unit = King
+        
+        # queenside castle
+        elif s == "O-O-O" or s == "0-0-0":
+            unit = King
+        
+        # other move
+        else:
+            # pawn moving forward
+            if len(s) == 2:
+                try:
+                    space = self.parse_coord(s)
+                except ValueError:
+                    raise MoveError("that's not a coordinate!")
+                unit = Pawn
+                col = space.x
+            else:
+                # parse unit type and disambiguating column if it's a pawn for capture
+                try:
+                    unit = parse_id_char(s[0])
+                    if unit == Pawn:
+                        col = parse_x_char(s[0])
+                        print col
+                except ValueError:
+                    raise MoveError("first letter not recognized")            
+                
+                # attempt to parse a coordinate from the string, starting from the back
+                index = len(s) - 1
+                while index >= 1:
+                    index -= 1
+                    try:
+                        space = self.parse_coord(s[index:(index + 2)])
+                        break
+                    except ValueError:
+                        if index == 1:
+                            raise MoveError("couldn't find a coordinate!")
+        
+            # attempt to find the piece that wants to move there
+            if unit == Pawn:
+                count = 0
+                for guy in army[Pawn]:
+                    if guy.x == col and space in guy.moves: # TODO: this can be done much more effectively now
+                        piece = guy
+                        count += 1
+                        break
+                if count == 0:
+                    raise MoveError("no such move is possible!")
+            else:
+                count = 0
+                for guy in army[unit]:
+                    if space in guy.moves: # TODO: this can be done much more effectively now
+                        piece = guy
+                        count += 1
+                if count > 1:
+                    # TODO: ambiguity decoding
+                    print "it's ambiguous! until i implement it, you don't get to choose... and it's probably going to break"
+                if count == 0:
+                    raise MoveError("no such move is possible!")
+                # enpassant, promotion
+
+                
+        # remember if it's a capture
         if space.unit != No:
             capture = True
-        
-        # save the history
-        if capture:
-            self.removes.append([(piece, piece.unit), (space, space.unit)])
-        else:
-            self.removes.append([(piece, piece.unit)])
-        self.adds.append([(space, piece.unit)])
-        
-        # TODO: recompose the string in case it's actually wrong
-        self.log.append(s)
+            captured = space.unit
         
         # actually move the piece
+        if capture:
+            self.remove(space)
         if turn == W:
             self.put(unit, space)
         elif turn == B:
-            self.put(-unit, space)
+            unit = -unit
+            self.put(unit, space)
         self.remove(piece)
+
+        # see if it's a check
+        if self.is_check():
+            print team_string(turn) + " is in check"
+            
+        # see if own king is checked after move and disallow if it is?
+        
+        
+        # build the string and save it
+        string = self.move_string(piece, space, capture = capture)        
+        self.log.append(string)
+        print string
+        
+        
+        # save the history
+        if capture:
+            self.removes.append([(piece, unit), (space, captured)])
+        else:
+            self.removes.append([(piece, unit)])
+        self.adds.append([(space, unit)])
 
         # progress the turn counter
         self.count += 1
         return
 
-    def parse_coord_string(self, s):
+    def parse_coord(self, s):
         if len(s) != 2:
             raise ValueError
         try: 
-            file = "abcdefgh".find(s[0])
-            rank = int(s[1]) - 1
+            file = parse_x_char(s[0])
+            rank = parse_y_char(s[1])
             if rank >= 0 and rank < 8 and file >= 0 and file < 8:
                 return(self.b[file][rank])
             else:
                 raise ValueError
         except ValueError:
             raise ValueError # lol
-    def parse_id_char(self, c):
-        result = "KQRNBabcdefgh".find(c) + 1
-        if result == 0:
-            raise ValueError
-        elif result >= 6:
-            return Pawn
-        else:
-            return result
-    def move_string(self, piece, space):
+    def move_string(self, piece, space, capture = False, check = False, mate = False, kscastle = False, qscastle = False, promotion = No, ambiguity = ""):
         string = ""
-        if space not in piece.moves:
-            return string
-        # TODO: castle
+
+        if kscastle:
+            string = "0-0"
+        elif qscastle:
+            string = "0-0-0"
         
         # if not pawn, need letter
-        if abs(piece.piece) != Pawn:
-            string += piece.id_string()
+        elif abs(piece.unit) != Pawn:
+            string = unit_char(piece.unit)
         # pawn capture takes file
-        elif space.piece != No:
-            string += piece.x_string()
+        elif capture:
+            string = x_char(piece.x)
 
-        # TODO: ambiguity; check if other pieces can go there
-
-        # if capture
-        if space.piece != No:
+        string += ambiguity
+        
+        if capture:
             string += "x"
         
-        string += space.coord_string()
+        # add the coordinate
+        if not kscastle and not qscastle:
+            string += space.coord_string()
         
-        # TODO: promotion
-        
-        # TODO: mate check
+        if promotion != No:
+            string += "=" + unit_char(promotion)
+            
+        if mate:
+            string += "#"
+        elif check:
+            string += "+"
         
         return string
 
@@ -438,16 +539,21 @@ class Game():
             return B
         else:
             return W
+    def is_check(self, team = 0):
+        if team == W:
+            return len(self.white[King][0].threatenedBy) > 0
+        elif team == B:
+            return len(self.black[King][0].threatenedBy) > 0
+        else:
+            return self.is_check(self.whose_turn() * -1)
+        
         
 game = Game()
-for i in range(8):
-    for j in range(8):
-        p = game.b[i][j]
-        p.get_moves()
 
 while True:
     game.print_board()
-    string = raw_input("Move: ")
+    game.update_moves()
+    string = raw_input("Command: ")
     if string == "quit" or string == "exit":
         exit()
     elif string == "undo":
@@ -456,16 +562,45 @@ while True:
         except MoveError, (instance):
             print instance.parameter
     elif string == "list":
-        team = game.black
+        army = game.black
         if game.whose_turn() == W:
-            team = game.white
-        for ls in team:
-            line = ""
-            for space in ls:
-                line += space.coord_string() + " "
+            army = game.white
+        for ls in army:
+            for piece in ls:
+                line = piece.unit_string() + " at " + piece.coord_string() + " can move to "
+                for space in piece.moves:
+                    line += space.coord_string() + ","
+                print line
+    elif string == "moves":
+        coordStr = raw_input("which coordinate? ")
+        piece = game.parse_coord(coordStr)
+        if piece.unit != No:
+            line = "This piece can move to: "
+            for space in piece.moves:
+                line += space.coord_string() + ","
             print line
+            line = "This piece threatens: "
+            for space in piece.threatens:
+                line += space.coord_string() + ","
+            print line
+            line = "This piece protects: "
+            for space in piece.protects:
+                line += space.unit_char() + space.coord_string() + ","
+            print line
+            line = "This piece is protected by: "
+            for space in piece.protectedBy:
+                line += space.unit_char() + space.coord_string() + ","
+            print line            
+        line = "This space can be moved to by: "
+        for space in piece.canMoveTo:
+            line += space.unit_char() + space.coord_string() + ","
+        print line
+        line = "This space is threatened by: "
+        for space in piece.threatenedBy:
+            line += space.unit_char() + space.coord_string() + ","
+        print line
     else:
         try:
-            game.parse_move_string(string)
+            game.execute_move(string)
         except MoveError, (instance):
             print instance.parameter
