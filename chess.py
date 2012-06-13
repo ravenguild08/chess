@@ -15,11 +15,17 @@ BPawn, BBishop, BKnight, BRook, BQueen, BKing, No, WKing, WQueen, WRook, WKnight
 King, Queen, Rook, Knight, Bishop, Pawn = range(1, 7)
 B, W = [-1, 1]
 def parse_x_char(c):
-    return "abcdefgh".find(c)
+    result = "abcdefgh".find(c)
+    if result < 0 or result >= 8:
+        raise ValueError
+    return result
 def parse_y_char(c):
-    return int(c) - 1
+    result = int(c) - 1
+    if result < 0 or result >= 8:
+        raise ValueError
+    return result
 def parse_id_char(c):
-    result = "KQRNBabcdefgh".find(c) + 1
+    result = "KQRNBPabcdefgh".find(c) + 1
     if result == 0:
         raise ValueError
     elif result >= 6:
@@ -33,6 +39,9 @@ def y_char(y):
 def unit_char(unit):
     letters = ["K", "Q", "R", "N", "B", "P"]
     return letters[abs(unit) - 1]
+def unit_string(unit):
+    strings = ["King", "Queen", "Rook", "Knight", "Bishop", "Pawn"]
+    return strings[abs(unit) - 1]
 def team_string(team):
     if team == W:
         return "White"
@@ -252,7 +261,7 @@ class Space():
 
     def coord_string(self):    
         return x_char(self.x) + y_char(self.y)
-    def unit_string(self):
+    def unit_draw(self):
         if self.unit == 0:
             return "  "
         elif self.unit < 0:
@@ -277,7 +286,12 @@ class Game():
         # place pieces on board
         self.white = [[], [], [], [], [], [], []]
         self.black = [[], [], [], [], [], [], []]
-        self.fill_board()       
+        
+        # self.fill_board()
+        self.put(WKnight, self.b[1][0])
+        self.put(WKnight, self.b[1][2])
+        self.put(WKnight, self.b[5][0])
+        self.put(BKing, self.b[7][7])
         
         # set up the history, turn count, and everything
         self.count = 0
@@ -333,7 +347,7 @@ class Game():
         for i in range(7, -1, -1):
             line = " " + str(i + 1) + " |"
             for j in range(8):
-                line += self.b[j][i].unit_string()
+                line += self.b[j][i].unit_draw()
                 line += "|"
             line += " " + str(i + 1)
             print line
@@ -369,86 +383,138 @@ class Game():
         self.log.pop()
         return
    
-    # takes a string and attempts to parse it and execute it
-    # raises MoveError if string can't be parsed or move isn't legal
-    def execute_move(self, s):
-        if len(s) < 2:
+    # takes a string and attempts to parse it. returns the piece and space
+    # raises MoveError if string can't be parsed or move isn't found to be legal
+    def parse_move(self, s):
+        length = len(s)
+        if length < 2:
             raise MoveError("algebraic notation needs at least two characters!")
-        capture = False
-        check = False
-        mate = False
-        promotion = False
-        ambiguity = ""
-        promotion = No
-        
         turn = self.whose_turn()
         army = self.black
         if turn == W:
             army = self.white
 
-        # kingside castle
-        if s == "O-O" or s == "0-0":
-            unit = King
-        
         # queenside castle
-        elif s == "O-O-O" or s == "0-0-0":
-            unit = King
-        
-        # other move
-        else:
-            # pawn moving forward
-            if len(s) == 2:
-                try:
-                    space = self.parse_coord(s)
-                except ValueError:
-                    raise MoveError("that's not a coordinate!")
-                unit = Pawn
-                col = space.x
+        if length >= 5 and (s[0:5] == "O-O-O" or s[0:5] == "0-0-0"):
+            if turn == W:
+                space = self.b[5][0]
+                for piece in space.canMoveTo:
+                    if piece.unit == WKing and piece.x == 3:
+                        return piece, space
             else:
-                # parse unit type and disambiguating column if it's a pawn for capture
-                try:
-                    unit = parse_id_char(s[0])
-                    if unit == Pawn:
-                        col = parse_x_char(s[0])
-                        print col
-                except ValueError:
-                    raise MoveError("first letter not recognized")            
-                
-                # attempt to parse a coordinate from the string, starting from the back
-                index = len(s) - 1
-                while index >= 1:
-                    index -= 1
-                    try:
-                        space = self.parse_coord(s[index:(index + 2)])
-                        break
-                    except ValueError:
-                        if index == 1:
-                            raise MoveError("couldn't find a coordinate!")
+                space = self.b[5][7]
+                for piece in space.canMoveTo:
+                    if piece.unit == BKing and piece.x == 3:
+                        return piece, space
+            raise MoveError("queenside castle not possible!")
+        # kingside castle
+        if length >= 3 and (s[0:3] == "O-O" or s[0:3] == "0-0"):
+            if turn == W:
+                space = self.b[1][0]
+                for piece in space.canMoveTo:
+                    if piece.unit == WKing and piece.x == 3:
+                        return piece, space
+            else:
+                space = self.b[1][7]            
+                for piece in space.canMoveTo:
+                    if piece.unit == BKing and piece.x == 3:
+                        return piece, space
+            raise MoveError("kingside castle not possible!")
+        # pawn moving forward
+        if len(s) == 2:
+            try:
+                space = self.parse_coord(s)
+            except ValueError:
+                raise MoveError("that's not a coordinate!")
+            unit = Pawn
+            for piece in space.canMoveTo:
+                if piece.unit == Pawn * turn and piece.x == space.x:
+                    return piece, space
+            raise MoveError("no pawn can move straight there!")
         
-            # attempt to find the piece that wants to move there
+        # parse unit type and disambiguating column if it's a pawn for capture
+        try:
+            unit = parse_id_char(s[0])
             if unit == Pawn:
-                count = 0
-                for guy in army[Pawn]:
-                    if guy.x == col and space in guy.moves: # TODO: this can be done much more effectively now
-                        piece = guy
-                        count += 1
-                        break
-                if count == 0:
-                    raise MoveError("no such move is possible!")
-            else:
-                count = 0
-                for guy in army[unit]:
-                    if space in guy.moves: # TODO: this can be done much more effectively now
-                        piece = guy
-                        count += 1
-                if count > 1:
-                    # TODO: ambiguity decoding
-                    print "it's ambiguous! until i implement it, you don't get to choose... and it's probably going to break"
-                if count == 0:
-                    raise MoveError("no such move is possible!")
-                # enpassant, promotion
+                col = parse_x_char(s[0])
+        except ValueError:
+            raise MoveError("the first letter doesn't represent a piece!")
+        
+        # attempt to parse a coordinate from the string, starting from the back
+        index = len(s) - 1
+        while index >= 1:
+            index -= 1
+            try:
+                space = self.parse_coord(s[index:(index + 2)])
+                break
+            except ValueError:
+                if index == 1:
+                    raise MoveError("couldn't find a coordinate!")                                            
 
-                
+        # if it's pawn capturing, then ambiguity already defined
+        if unit == Pawn:
+            for piece in space.canMoveTo:
+                if piece.unit == unit * turn and piece.x == col:
+                    return piece, space
+            raise MoveError("no pawn in specified column can capture there!")
+        
+        # if it's some other piece
+        else:
+            save = []
+            for piece in space.canMoveTo:
+                if piece.unit == unit * turn:
+                    save.append(piece)
+            count = len(save)
+            if count < 1:
+                raise MoveError("no " + unit_string(unit) + " can move there!")
+            elif count == 1:                    
+                return save[0], space
+            # if it's ambiguous
+            elif count > 1:
+                save2 = []
+                if index < 2:
+                    raise MoveError("you need to disambiguate!")
+                try:
+                    # attempt to disambiguate by file
+                    file = parse_x_char(s[1])
+                    for piece in save:
+                        if piece.x == file:
+                            save2.append(piece)
+                    count2 = len(save2)
+                    if count2 < 1:
+                        raise MoveError("no piece has that file!")
+                    elif count2 == 1:
+                        return save2[0], space
+                    # if still ambiguous attempt, to disambiguate by rank too
+                    elif count2 > 1:
+                        if index < 2:
+                            raise MoveError("you need to disambiguate by rank too!")
+                        try:
+                            rank = parse_y_char(s[2])
+                            for piece in save2:
+                                if piece.y == rank:
+                                    return piece, space
+                        except ValueError:
+                            raise MoveError("no piece has that rank and file!")                    
+                except ValueError:
+                    try: 
+                        rank = parse_y_char(s[1])
+                        for piece in save:
+                            if piece.y == rank:
+                                save2.append(piece)
+                        count2 = len(save2)
+                        if count2 < 1:
+                            raise MoveError("no piece has that rank!")
+                        elif count2 == 1:
+                            return save2[0], space
+                        elif count2 > 1:
+                            raise MoveError("you need to disambiguate by file and rank!")
+                    except ValueError:
+                        raise MoveError("you didn't disambiguate the move correctly!")
+        # enpassant, promotion
+    def execute_move(self, piece, space):
+        unit = piece.unit
+        capture = False
         # remember if it's a capture
         if space.unit != No:
             capture = True
@@ -457,16 +523,12 @@ class Game():
         # actually move the piece
         if capture:
             self.remove(space)
-        if turn == W:
-            self.put(unit, space)
-        elif turn == B:
-            unit = -unit
-            self.put(unit, space)
+        self.put(unit, space)
         self.remove(piece)
 
         # see if it's a check
-        if self.is_check():
-            print team_string(turn) + " is in check"
+        # if self.is_check():
+        #    print team_string(turn) + " is in check"
             
         # see if own king is checked after move and disallow if it is?
         
@@ -502,15 +564,15 @@ class Game():
             raise ValueError # lol
     def move_string(self, piece, space, capture = False, check = False, mate = False, kscastle = False, qscastle = False, promotion = No, ambiguity = ""):
         string = ""
-
+        unit = abs(piece.unit)
         if kscastle:
             string = "0-0"
         elif qscastle:
             string = "0-0-0"
         
         # if not pawn, need letter
-        elif abs(piece.unit) != Pawn:
-            string = unit_char(piece.unit)
+        elif unit != Pawn:
+            string = unit_char(unit) # TODO: this is wrong right now
         # pawn capture takes file
         elif capture:
             string = x_char(piece.x)
@@ -554,7 +616,7 @@ while True:
     game.print_board()
     game.update_moves()
     string = raw_input("Command: ")
-    if string == "quit" or string == "exit":
+    if string == "quit" or string == "exit" or string == "q":
         exit()
     elif string == "undo":
         try:
@@ -567,7 +629,7 @@ while True:
             army = game.white
         for ls in army:
             for piece in ls:
-                line = piece.unit_string() + " at " + piece.coord_string() + " can move to "
+                line = unit_string(piece.unit) + " at " + piece.coord_string() + " can move to "
                 for space in piece.moves:
                     line += space.coord_string() + ","
                 print line
@@ -601,6 +663,7 @@ while True:
         print line
     else:
         try:
-            game.execute_move(string)
+            piece, space = game.parse_move(string)
+            game.execute_move(piece, space)
         except MoveError, (instance):
             print instance.parameter
