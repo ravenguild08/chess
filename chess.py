@@ -2,7 +2,7 @@
 chess.py
 
 Peter Hung
-060612-060812
+060612-
 for shits and giggles
 """
 
@@ -58,8 +58,8 @@ class MoveError(Exception):
         return repr(self.parameter)
     
 class Space():
-    def __init__(self, board, x, y):
-        self.board = board
+    def __init__(self, game, x, y):
+        self.game = game
         self.x = x
         self.y = y
         self.nHoriz = [[],[],[],[]]
@@ -75,43 +75,43 @@ class Space():
         
     def add_iff_legal(self, x, y):
         if x >= 0 and x < 8 and y >= 0 and y < 8:
-            self.nKnight.append(self.board[x][y])
+            self.nKnight.append(self.game.b[x][y])
     def set_neighbors(self):
         # print "space " + str(self.x) + " " + str(self.y)
         for n in range(self.y + 1, 8):
-            self.nHoriz[0].append(self.board[self.x][n])
+            self.nHoriz[0].append(self.game.b[self.x][n])
         for e in range(self.x + 1, 8):
-            self.nHoriz[1].append(self.board[e][self.y])
+            self.nHoriz[1].append(self.game.b[e][self.y])
         for s in range(self.y - 1, -1, -1):
-            self.nHoriz[2].append(self.board[self.x][s])        
+            self.nHoriz[2].append(self.game.b[self.x][s])        
         for w in range(self.x - 1, -1, -1):
-            self.nHoriz[3].append(self.board[w][self.y])
+            self.nHoriz[3].append(self.game.b[w][self.y])
         # ne
         x = self.x + 1
         y = self.y + 1
         while x < 8 and y < 8:
-            self.nDiag[0].append(self.board[x][y])
+            self.nDiag[0].append(self.game.b[x][y])
             x += 1
             y += 1
         # se
         x = self.x + 1
         y = self.y - 1
         while x < 8 and y >= 0:
-            self.nDiag[1].append(self.board[x][y])
+            self.nDiag[1].append(self.game.b[x][y])
             x += 1
             y -= 1
         # sw
         x = self.x - 1
         y = self.y - 1
         while x >= 0 and y >= 0: 
-            self.nDiag[2].append(self.board[x][y])
+            self.nDiag[2].append(self.game.b[x][y])
             x -= 1
             y -= 1
         # nw
         x = self.x - 1
         y = self.y + 1
         while x >= 0 and y < 8:
-            self.nDiag[3].append(self.board[x][y])
+            self.nDiag[3].append(self.game.b[x][y])
             x -= 1
             y += 1
         self.add_iff_legal(self.x + 1, self.y + 2)
@@ -180,7 +180,6 @@ class Space():
             for i in range(4):
                 self.add_first_moves(self.nHoriz[i])
                 self.add_first_moves(self.nDiag[i])
-            # TODO: castle
         elif unit == Queen:
             for i in range(4):
                 self.add_row_moves(self.nHoriz[i])
@@ -208,15 +207,15 @@ class Space():
                 # TODO: promote
                 
                 return []
-            if self.board[self.x][self.y + 1].unit == No:
-                self.mark_move(self.board[self.x][self.y + 1])
-                if self.y == 1 and self.board[self.x][3].unit == No:
-                    self.mark_move(self.board[self.x][3])
+            if self.game.b[self.x][self.y + 1].unit == No:
+                self.mark_move(self.game.b[self.x][self.y + 1])
+                if self.y == 1 and self.game.b[self.x][3].unit == No:
+                    self.mark_move(self.game.b[self.x][3])
             diagonals = []
             if self.x > 0:
-                diagonals.append(self.board[self.x - 1][self.y + 1])
+                diagonals.append(self.game.b[self.x - 1][self.y + 1])
             if self.x < 7:
-                diagonals.append(self.board[self.x + 1][self.y + 1])
+                diagonals.append(self.game.b[self.x + 1][self.y + 1])
             for space in diagonals:
                 spaceTeam = space.get_team()
                 if spaceTeam == B:
@@ -234,15 +233,15 @@ class Space():
                 # TODO: promote
                 
                 return []
-            if self.board[self.x][self.y - 1].unit == No:
-                self.mark_move(self.board[self.x][self.y - 1])
-                if self.y == 6 and self.board[self.x][4].unit == No:
-                    self.mark_move(self.board[self.x][4])
+            if self.game.b[self.x][self.y - 1].unit == No:
+                self.mark_move(self.game.b[self.x][self.y - 1])
+                if self.y == 6 and self.game.b[self.x][4].unit == No:
+                    self.mark_move(self.game.b[self.x][4])
             diagonals = []
             if self.x > 0:
-                diagonals.append(self.board[self.x - 1][self.y - 1])
+                diagonals.append(self.game.b[self.x - 1][self.y - 1])
             if self.x < 7:
-                diagonals.append(self.board[self.x + 1][self.y - 1])
+                diagonals.append(self.game.b[self.x + 1][self.y - 1])
             for space in diagonals:
                 spaceTeam = space.get_team()
             for space in diagonals:
@@ -278,29 +277,25 @@ class Game():
         for i in range(8):
             self.b[i] = {}
             for j in range(8):
-                self.b[i][j] = Space(self.b, i, j)
+                self.b[i][j] = Space(self, i, j)
         for i in range(8):
             for j in range(8):
                 self.b[i][j].set_neighbors()
         
-        # place pieces on board
+        # set up the history, turn count, and everything
         self.white = [[], [], [], [], [], [], []]
         self.black = [[], [], [], [], [], [], []]
-        
-        # self.fill_board()
-        self.put(WKnight, self.b[1][0])
-        self.put(WKnight, self.b[1][2])
-        self.put(WKnight, self.b[5][0])
-        self.put(BKing, self.b[7][7])
-        
-        # set up the history, turn count, and everything
         self.count = 0
         self.removes = []
         self.adds = []
         self.log = []
         
         # TODO: no progress counter
-        return
+        
+        # TODO: this might not even be used
+        # if the king and rook on that side have been moved yet
+        self.canKCastle = [False, True, True]
+        self.canQCastle = [False, True, True]
     def put(self, unit, space):
         space.unit = unit
         index = abs(unit)
@@ -369,16 +364,76 @@ class Game():
         for i in range(8):
             for j in range(8):
                 self.b[i][j].get_moves()
+        self.update_castle(self.white[King][0])
+        self.update_castle(self.black[King][0])
+        
+    # castle checking
+    def update_castle(self, king):
+        team = king.get_team()
+        KCastle = False
+        QCastle = False
+        # if king is in original space, move on
+        if team == W and king.x == 4 and king.y == 0:
+            KRook = self.b[0][0]
+            QRook = self.b[7][0]
+        elif team == B and king.x == 4 and king.y == 7:
+            KRook = self.b[0][7]
+            QRook = self.b[7][7]
+        else:
+            return
+            
+        # ensure that the rook unmoved can see king. that means intervening spaces empty
+        for piece in king.protectedBy:
+            if piece == KRook and abs(piece.unit) == Rook:
+                KCastle = True
+            if piece == QRook and abs(piece.unit) == Rook:
+                QCastle = True
+                
+        if KCastle == False and QCastle == False:        
+            return
+            
+        # look into history to see if king or rooks have been moved
+        for ls in self.removes:
+            for unit, space in ls:
+                if KCastle and space == KRook:
+                    KCastle = False
+                elif QCastle and space == QRook:
+                    QCastle = False
+                elif space == king:
+                    return
+                elif KCastle == False and QCastle == False:        
+                    return
+                    
+        # check if any of three spaces are threatened
+        if KCastle:
+            for space in [king, self.b[3][king.y], self.b[2][king.y]]:
+                for threat in space.threatenedBy:
+                    if threat.get_team() == -team:
+                        KCastle = False
+                        break
+        if QCastle:
+            for space in [king, self.b[5][king.y], self.b[6][king.y]]:
+                for threat in space.threatenedBy:
+                    if threat.get_team() == -team:
+                        QCastle = False
+                        break
+        
+        # finally, if all passed, then add as legal move
+        if KCastle:
+            king.mark_move(self.b[2][king.y])
+        if QCastle:
+            king.mark_move(self.b[6][king.y])
+
     def undo_move(self):
         if self.count == 0:
             raise MoveError("there are no more moves to undo!")
         # regress the turn counter
         self.count -= 1
         # remove the moved pieces
-        for loc, unit in self.adds.pop():
+        for unit, loc in self.adds.pop():
             self.remove(loc)
         # add back all the pieces that were removed
-        for loc, unit in self.removes.pop():
+        for unit, loc in self.removes.pop():
             self.put(unit, loc)
         self.log.pop()
         return
@@ -397,61 +452,57 @@ class Game():
         # queenside castle
         if length >= 5 and (s[0:5] == "O-O-O" or s[0:5] == "0-0-0"):
             if turn == W:
-                space = self.b[5][0]
+                space = self.b[2][0]
                 for piece in space.canMoveTo:
-                    if piece.unit == WKing and piece.x == 3:
+                    if piece.unit == WKing and piece.x == 4:
                         return piece, space
             else:
-                space = self.b[5][7]
+                space = self.b[2][7]            
                 for piece in space.canMoveTo:
-                    if piece.unit == BKing and piece.x == 3:
+                    if piece.unit == BKing and piece.x == 4:
                         return piece, space
             raise MoveError("queenside castle not possible!")
         # kingside castle
         if length >= 3 and (s[0:3] == "O-O" or s[0:3] == "0-0"):
             if turn == W:
-                space = self.b[1][0]
+                space = self.b[6][0]
                 for piece in space.canMoveTo:
-                    if piece.unit == WKing and piece.x == 3:
+                    if piece.unit == WKing and piece.x == 4:
                         return piece, space
             else:
-                space = self.b[1][7]            
+                space = self.b[6][7]
                 for piece in space.canMoveTo:
-                    if piece.unit == BKing and piece.x == 3:
+                    if piece.unit == BKing and piece.x == 4:
                         return piece, space
             raise MoveError("kingside castle not possible!")
-        # pawn moving forward
-        if len(s) == 2:
+        
+        # attempt to parse a coordinate from the string, starting from the back
+        index = len(s) - 1
+        while index >= 0:
+            index -= 1
             try:
-                space = self.parse_coord(s)
+                space = self.parse_coord(s[index:(index + 2)])
+                break
             except ValueError:
-                raise MoveError("that's not a coordinate!")
+                if index == 0:
+                    raise MoveError("couldn't find a coordinate!")                                            
+
+        # if the only coordinate is the first one, assume piece is a pawn moving straight 
+        if index == 0:
             unit = Pawn
             for piece in space.canMoveTo:
-                if piece.unit == Pawn * turn and piece.x == space.x:
-                    return piece, space
+                if piece.unit == Pawn * turn and piece.x == space.x:                    
+                    return piece, space # TODO: this is going to break when it's an en passant
             raise MoveError("no pawn can move straight there!")
-        
-        # parse unit type and disambiguating column if it's a pawn for capture
+
         try:
             unit = parse_id_char(s[0])
             if unit == Pawn:
                 col = parse_x_char(s[0])
         except ValueError:
             raise MoveError("the first letter doesn't represent a piece!")
-        
-        # attempt to parse a coordinate from the string, starting from the back
-        index = len(s) - 1
-        while index >= 1:
-            index -= 1
-            try:
-                space = self.parse_coord(s[index:(index + 2)])
-                break
-            except ValueError:
-                if index == 1:
-                    raise MoveError("couldn't find a coordinate!")                                            
 
-        # if it's pawn capturing, then ambiguity already defined
+            # if it's pawn capturing, then ambiguity already defined
         if unit == Pawn:
             for piece in space.canMoveTo:
                 if piece.unit == unit * turn and piece.x == col:
@@ -512,43 +563,86 @@ class Game():
                     except ValueError:
                         raise MoveError("you didn't disambiguate the move correctly!")
         # enpassant, promotion
+        
     def execute_move(self, piece, space):
+        # TODO: promotion
         unit = piece.unit
         capture = False
+        check = False
+        mate = False
+        turn = self.whose_turn()
+        if turn == W:
+            army = self.white
+            enemy = self.black
+            homeRank = 0
+        else:
+            army = self.black
+            enemy = self.white
+            homeRank = 7
         # remember if it's a capture
         if space.unit != No:
             capture = True
             captured = space.unit
         
-        # actually move the piece
-        if capture:
-            self.remove(space)
-        self.put(unit, space)
-        self.remove(piece)
+        # KCastle
+        if unit * turn == King and piece.x == 4 and piece.y == homeRank and space.x == 6:
+            rook = self.b[7][homeRank]
+            rookDestination = self.b[5][homeRank]
+            self.put(unit, space)
+            self.remove(piece)
+            self.put(Rook * turn, rookDestination)
+            self.remove(rook)            
+            # save to history
+            self.removes.append([(unit, piece), (Rook * turn, rook)])
+            self.adds.append([(unit, space), (Rook * turn, rookDestination)])
 
-        # see if it's a check
-        # if self.is_check():
-        #    print team_string(turn) + " is in check"
+        # QCastle
+        elif unit * turn == King and piece.x == 4 and piece.y == homeRank and space.x == 2:
+            rook = self.b[0][homeRank]
+            rookDestination = self.b[3][homeRank]
+            self.put(unit, space)
+            self.remove(piece)
+            self.put(Rook * turn, rookDestination)
+            self.remove(rook)        
+            # save to history
+            self.removes.append([(unit, piece), (Rook * turn, rook)])
+            self.adds.append([(unit, space), (Rook * turn, rookDestination)])
             
-        # see if own king is checked after move and disallow if it is?
+        # otherwise,
+        else:
         
-        
+            # actually move the piece
+            if capture:
+                self.remove(space)
+            self.put(unit, space)
+            self.remove(piece)
+            
+            # if puts self in check, disallow it
+            if self.hypothetical_threat(army[King][0]):
+                self.remove(space)
+                self.put(unit, piece)
+                if capture:
+                    self.put(captured, space)
+                raise MoveError("This would put yourself in check!")
+            if self.hypothetical_threat(enemy[King][0]):
+                print "check!"
+                check = True
+            
+            # save the history
+            if capture:
+                self.removes.append([(unit, piece), (captured, space)])
+            else:
+                self.removes.append([(unit, piece)])
+            self.adds.append([(unit, space)])
+
         # build the string and save it
-        string = self.move_string(piece, space, capture = capture)        
+        string = self.move_string(piece, space, capture, check, mate)
         self.log.append(string)
         print string
-        
-        
-        # save the history
-        if capture:
-            self.removes.append([(piece, unit), (space, captured)])
-        else:
-            self.removes.append([(piece, unit)])
-        self.adds.append([(space, unit)])
 
         # progress the turn counter
         self.count += 1
-        return
+        return True
 
     def parse_coord(self, s):
         if len(s) != 2:
@@ -564,7 +658,7 @@ class Game():
             raise ValueError # lol
     def move_string(self, piece, space, capture = False, check = False, mate = False, kscastle = False, qscastle = False, promotion = No, ambiguity = ""):
         string = ""
-        unit = abs(piece.unit)
+        unit = abs(space.unit)
         if kscastle:
             string = "0-0"
         elif qscastle:
@@ -608,9 +702,50 @@ class Game():
             return len(self.black[King][0].threatenedBy) > 0
         else:
             return self.is_check(self.whose_turn() * -1)
+    
+    # without recalculating everything, checks if the piece is threatened enemy pieces
+    # TODO: check this function, especially the pawn part
+    def hypothetical_threat(self, piece):
+        if piece.unit == No:
+            return False
+        team = piece.get_team()
+        enemy = team * -1
+        for space in piece.nKnight:
+            if space.unit == Knight * enemy:
+                return True
+        for arr in piece.nHoriz:
+            for space in arr:
+                if space.unit == Rook * enemy or space.unit == Queen * enemy:
+                    return True
+                    break
+                elif space.unit != No:
+                    break
+            if len(arr) > 0 and arr[0].unit == King * enemy:
+                return True        
+        for arr in piece.nDiag:
+            for space in arr:
+                if space.unit == Bishop * enemy or space.unit == Queen * enemy:
+                    return True
+                    break
+                elif space.unit != No:
+                    break
+            if len(arr) > 0 and arr[0].unit == King * enemy:
+                return True
+        if team == W:
+            if len(piece.nDiag[0]) > 0 and piece.nDiag[0][0].unit == BPawn:
+                return True
+            if len(piece.nDiag[3]) > 0 and piece.nDiag[3][0].unit == BPawn:
+                return True
+        elif team == B:
+            if len(piece.nDiag[1]) > 0 and piece.nDiag[1][0].unit == WPawn:
+                return True
+            if len(piece.nDiag[2]) > 0 and piece.nDiag[2][0].unit == WPawn:
+                return True
+        return False
         
         
 game = Game()
+game.fill_board()
 
 while True:
     game.print_board()
