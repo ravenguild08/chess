@@ -204,8 +204,6 @@ class Space():
                 self.add_row_moves(self.nDiag[i])
         elif self.unit == WPawn:
             if self.y == 7:
-                # TODO: promote
-                
                 return []
             if self.game.b[self.x][self.y + 1].unit == No:
                 self.mark_move(self.game.b[self.x][self.y + 1])
@@ -225,13 +223,8 @@ class Space():
                     self.mark_protect(space)
                 else:
                     self.mark_threaten(space)
-
-            # TODO: en passant
-            
         elif self.unit == BPawn:
             if self.y == 0:
-                # TODO: promote
-                
                 return []
             if self.game.b[self.x][self.y - 1].unit == No:
                 self.mark_move(self.game.b[self.x][self.y - 1])
@@ -253,9 +246,6 @@ class Space():
                     self.mark_protect(space)
                 else:
                     self.mark_threaten(space)
-
-            # TODO: en pessant
-            
         return self.moves
 
     def coord_string(self):    
@@ -289,13 +279,9 @@ class Game():
         self.removes = []
         self.adds = []
         self.log = []
-        
+               
         # TODO: no progress counter
         
-        # TODO: this might not even be used
-        # if the king and rook on that side have been moved yet
-        self.canKCastle = [False, True, True]
-        self.canQCastle = [False, True, True]
     def put(self, unit, space):
         space.unit = unit
         index = abs(unit)
@@ -366,8 +352,14 @@ class Game():
                 self.b[i][j].get_moves()
         self.update_castle(self.white[King][0])
         self.update_castle(self.black[King][0])
+        self.update_enpassant()
+        # TODO: enpassant checking
         
-    # castle checking
+        # TODO: draw if only kings left
+        # TODO: draw if 100 cycles gone without capturing
+        # TODO: win if mate
+        
+    # if the castles are legal for passed king, add to list of allowed moves
     def update_castle(self, king):
         team = king.get_team()
         KCastle = False
@@ -424,19 +416,28 @@ class Game():
         if QCastle:
             king.mark_move(self.b[6][king.y])
 
-    def undo_move(self):
+    # if enpassant is legal, add to list of allowed moves
+    def update_enpassant(self):
         if self.count == 0:
-            raise MoveError("there are no more moves to undo!")
-        # regress the turn counter
-        self.count -= 1
-        # remove the moved pieces
-        for unit, loc in self.adds.pop():
-            self.remove(loc)
-        # add back all the pieces that were removed
-        for unit, loc in self.removes.pop():
-            self.put(unit, loc)
-        self.log.pop()
-        return
+            return
+        prevRemove = self.removes[self.count - 1]
+        prevAdd = self.adds[self.count - 1]
+        if len(prevRemove) != 1:
+            return
+        unit, piece = prevRemove[0]
+        dest, space = prevAdd[0]
+        if unit == WPawn and piece.y == 1 and space.y == 3:
+            file = space.x            
+            if file > 0 and self.b[space.x - 1][space.y].unit == BPawn:
+                self.b[space.x - 1][space.y].mark_move(self.b[space.x][2])
+            if file < 7 and self.b[space.x + 1][space.y].unit == BPawn:
+                self.b[space.x + 1][space.y].mark_move(self.b[space.x][2])
+        elif unit == BPawn and piece.y == 6 and space.y == 4:
+            file = space.x
+            if file > 0 and self.b[space.x - 1][space.y].unit == WPawn:
+                self.b[space.x - 1][space.y].mark_move(self.b[space.x][5])
+            if file < 7 and self.b[space.x + 1][space.y].unit == WPawn:
+                self.b[space.x + 1][space.y].mark_move(self.b[space.x][5])    
    
     # takes a string and attempts to parse it. returns the piece and space
     # raises MoveError if string can't be parsed or move isn't found to be legal
@@ -494,7 +495,7 @@ class Game():
                 if piece.unit == Pawn * turn and piece.x == space.x:                    
                     return piece, space # TODO: this is going to break when it's an en passant
             raise MoveError("no pawn can move straight there!")
-
+        # otherwise, attempt to parse piece identity
         try:
             unit = parse_id_char(s[0])
             if unit == Pawn:
@@ -562,7 +563,6 @@ class Game():
                             raise MoveError("you need to disambiguate by file and rank!")
                     except ValueError:
                         raise MoveError("you didn't disambiguate the move correctly!")
-        # enpassant, promotion
         
     def execute_move(self, piece, space):
         # TODO: promotion
@@ -570,6 +570,11 @@ class Game():
         capture = False
         check = False
         mate = False
+        enpassant = False
+        promotion = No
+        kCastle = False
+        qCastle = False
+        ambiguity = ""
         turn = self.whose_turn()
         if turn == W:
             army = self.white
@@ -595,6 +600,7 @@ class Game():
             # save to history
             self.removes.append([(unit, piece), (Rook * turn, rook)])
             self.adds.append([(unit, space), (Rook * turn, rookDestination)])
+            kCastle = True
 
         # QCastle
         elif unit * turn == King and piece.x == 4 and piece.y == homeRank and space.x == 2:
@@ -607,13 +613,41 @@ class Game():
             # save to history
             self.removes.append([(unit, piece), (Rook * turn, rook)])
             self.adds.append([(unit, space), (Rook * turn, rookDestination)])
+            qCastle = True
             
-        # otherwise,
         else:
-        
+            # detect enpassant by pawn moving diagonal but it not being capture
+            if not capture and unit == Pawn and space.x != piece.x:
+                enpassant = True
+                lostPawn = self.b[space.x][piece.y]
+
+            # decode ambiguity for later
+            save = []
+            for possible in space.canMoveTo:
+                if possible.unit == piece.unit and possible != piece:
+                    print possible.coord_string()
+                    save.append(possible)
+            saveLen = len(save)
+            if saveLen == 1:
+                if save[0].x == piece.x:
+                    ambiguity = y_char(piece.y)
+                else:
+                    ambiguity = x_char(piece.x)
+            elif saveLen > 1:      
+                for possible in save:                
+                    if possible.y == piece.y:
+                        ambiguity = x_char(piece.x)
+                        break
+                for possible in save:    
+                    if possible.x == piece.x:
+                        ambiguity += y_char(piece.y)
+                        break
+            
             # actually move the piece
             if capture:
                 self.remove(space)
+            elif enpassant:
+                self.remove(lostPawn)
             self.put(unit, space)
             self.remove(piece)
             
@@ -623,26 +657,45 @@ class Game():
                 self.put(unit, piece)
                 if capture:
                     self.put(captured, space)
+                elif enpassant:
+                    self.put(-unit, lostPawn)
                 raise MoveError("This would put yourself in check!")
-            if self.hypothetical_threat(enemy[King][0]):
-                print "check!"
-                check = True
             
             # save the history
             if capture:
                 self.removes.append([(unit, piece), (captured, space)])
+            elif enpassant:
+                self.removes.append([(unit, piece), (-unit, lostPawn)])
             else:
                 self.removes.append([(unit, piece)])
             self.adds.append([(unit, space)])
-
+                
+        if self.hypothetical_threat(enemy[King][0]):
+            print "check!"
+            check = True
+        # TODO: if mate
+        
         # build the string and save it
-        string = self.move_string(piece, space, capture, check, mate)
+        string = self.move_string(piece, space, capture, check, mate, kCastle, qCastle, promotion, ambiguity, enpassant)
         self.log.append(string)
         print string
 
         # progress the turn counter
         self.count += 1
         return True
+    def undo_move(self):
+        if self.count == 0:
+            raise MoveError("there are no more moves to undo!")
+        # regress the turn counter
+        self.count -= 1
+        # remove the moved pieces
+        for unit, loc in self.adds.pop():
+            self.remove(loc)
+        # add back all the pieces that were removed
+        for unit, loc in self.removes.pop():
+            self.put(unit, loc)
+        self.log.pop()
+        return
 
     def parse_coord(self, s):
         if len(s) != 2:
@@ -656,33 +709,41 @@ class Game():
                 raise ValueError
         except ValueError:
             raise ValueError # lol
-    def move_string(self, piece, space, capture = False, check = False, mate = False, kscastle = False, qscastle = False, promotion = No, ambiguity = ""):
+    def move_string(self, piece, space, capture = False, check = False, mate = False, kscastle = False, qscastle = False, promotion = No, ambiguity = "", enpassant = False):
         string = ""
         unit = abs(space.unit)
+        # if castles, just start with that
         if kscastle:
             string = "0-0"
         elif qscastle:
             string = "0-0-0"
         
-        # if not pawn, need letter
-        elif unit != Pawn:
-            string = unit_char(unit) # TODO: this is wrong right now
-        # pawn capture takes file
-        elif capture:
+        # if pawn capturing or enpassanting, need letter
+        elif unit == Pawn and (capture or enpassant):
             string = x_char(piece.x)
-
-        string += ambiguity
+        # any other piece takes letter
+        else:            
+            if unit != Pawn:
+                string = unit_char(unit)
+                
+            # add preparsed disambiguation
+            string += ambiguity
         
-        if capture:
+        # if capture, notate it so
+        if capture or enpassant:
             string += "x"
         
         # add the coordinate
         if not kscastle and not qscastle:
             string += space.coord_string()
         
+        # if it's a promotion, add the piece identity
         if promotion != No:
             string += "=" + unit_char(promotion)
-            
+        elif enpassant:
+            string += "e.p."
+        
+        # if mate or check, add appropriate symbol
         if mate:
             string += "#"
         elif check:
@@ -704,7 +765,6 @@ class Game():
             return self.is_check(self.whose_turn() * -1)
     
     # without recalculating everything, checks if the piece is threatened enemy pieces
-    # TODO: check this function, especially the pawn part
     def hypothetical_threat(self, piece):
         if piece.unit == No:
             return False
@@ -746,6 +806,16 @@ class Game():
         
 game = Game()
 game.fill_board()
+
+""" 
+# disambiguity checking
+game.put(WKnight, game.b[0][0])
+game.put(WKnight, game.b[0][2])
+game.put(WKnight, game.b[4][0])
+game.put(BKing, game.b[7][7])
+game.put(WKing, game.b[7][0])
+"""
+
 
 while True:
     game.print_board()
