@@ -325,6 +325,8 @@ class Game():
         for i in range(8):
             self.put(WPawn, self.b[i][1])
             self.put(BPawn, self.b[i][6])
+            for j in range(2, 6):
+                self.put(No, self.b[i][j])
         return
     def print_board(self):
         print " "
@@ -344,6 +346,8 @@ class Game():
 
     def update_moves(self):
         self.legalMoves = []
+        
+        # clear all move and threat saves
         for i in range(8):
             for j in range(8):
                 space = self.b[i][j]
@@ -353,6 +357,8 @@ class Game():
                 space.protectedBy = []
                 space.canMoveTo = []
                 space.threatenedBy = []
+        
+        # reset the moves for all
         for i in range(8):
             for j in range(8):
                 self.b[i][j].get_moves()
@@ -360,15 +366,25 @@ class Game():
         self.update_castle(self.black[King][0])
         self.update_enpassant()
         
+        # enact each move that can be made by current player and dump if puts self in check
+        # need temporary copy of pieces to avoid breaking in volatile army registry
         turn = self.whose_turn()
+        pieceList = [] 
         if turn == W:
             army = self.white
         elif turn == B:
             army = self.black
         for ls in army:
             for piece in ls:
-                for space in piece.moves:
+                pieceList.append(piece)
+        for piece in pieceList:
+            for space in piece.moves:
+                adds, removes, s = self.convert_move(piece, space)
+                self.enact(adds, removes)
+                if self.hypothetical_threat(army[King][0]) == False:
                     self.legalMoves.append((piece, space))
+                self.enact(removes, adds)
+        return self.legalMoves
         
     # if the castles are legal for passed king, add to list of allowed moves
     def update_castle(self, king):
@@ -429,7 +445,7 @@ class Game():
 
     # if enpassant is legal, add to list of allowed moves
     def update_enpassant(self):
-        if self.count == 0:
+        if self.count <= 0:
             return
         prevRemove = self.removes[self.count - 1]
         prevAdd = self.adds[self.count - 1]
@@ -589,138 +605,134 @@ class Game():
                             raise MoveError("you need to disambiguate by file and rank!")
                     except ValueError:
                         raise MoveError("you didn't disambiguate the move correctly!")
-        
-    def execute_move(self, piece, space):
-        print "legal moves size: " + str(len(self.legalMoves))
-        if (piece, space) not in self.legalMoves:
-            raise MoveError("that's not a legal move!")
-        
+
+    # takes a piece and space and converts it into adds, removes, and a string WITHOUT CHECKING
+    def convert_move(self, piece, space):
         unit = piece.unit
-        capture = False
-        check = False
-        mate = False
-        enpassant = False
-        promotion = No
-        kCastle = False
-        qCastle = False
-        ambiguity = ""
         turn = self.whose_turn()
         if turn == W:
-            army = self.white
-            enemy = self.black
             homeRank = 0
         else:
-            army = self.black
-            enemy = self.white
             homeRank = 7
-            
-        # remember if it's a capture
-        if space.unit != No:
-            capture = True
-            captured = space.unit
         
         # KCastle
         if unit * turn == King and piece.x == 4 and piece.y == homeRank and space.x == 6:
             rook = self.b[7][homeRank]
             rookDestination = self.b[5][homeRank]
-            self.put(unit, space)
-            self.remove(piece)
-            self.put(Rook * turn, rookDestination)
-            self.remove(rook)            
-            # save to history
-            self.removes.append([(unit, piece), (Rook * turn, rook)])
-            self.adds.append([(unit, space), (Rook * turn, rookDestination)])
-            kCastle = True
+            removes = [(unit, piece), (Rook * turn, rook)]
+            adds = [(unit, space), (Rook * turn, rookDestination)]
+            return (adds, removes, "O-O")
 
         # QCastle
         elif unit * turn == King and piece.x == 4 and piece.y == homeRank and space.x == 2:
             rook = self.b[0][homeRank]
             rookDestination = self.b[3][homeRank]
-            self.put(unit, space)
-            self.remove(piece)
-            self.put(Rook * turn, rookDestination)
-            self.remove(rook)        
-            # save to history
-            self.removes.append([(unit, piece), (Rook * turn, rook)])
-            self.adds.append([(unit, space), (Rook * turn, rookDestination)])
-            qCastle = True
-            
-        else:
-            # detect enpassant by pawn moving diagonal but it not being capture
-            if not capture and unit == Pawn and space.x != piece.x:
-                enpassant = True
-                lostPawn = self.b[space.x][piece.y]
-                
-            if unit * turn == Pawn and (space.y == 0 or space.y == 7):
-                promotion = self.get_promotion() * turn
+            removes = [(unit, piece), (Rook * turn, rook)]
+            adds = [(unit, space), (Rook * turn, rookDestination)]
+            return (adds, removes, "O-O-O")
 
-            # decode ambiguity for later
-            save = []
-            for possible in space.canMoveTo:
-                if possible.unit == piece.unit and possible != piece:
-                    save.append(possible)
-            saveLen = len(save)
-            if saveLen == 1:
-                if save[0].x == piece.x:
-                    ambiguity = y_char(piece.y)
-                else:
+        capture = False
+        enpassant = False
+        promotion = No
+        ambiguity = ""
+            
+        # remember if it's a capture
+        if space.unit != No:
+            capture = True
+            captured = space.unit
+
+        # detect enpassant by pawn moving diagonal but it not being capture
+        if not capture and unit * turn == Pawn and space.x != piece.x:
+            enpassant = True
+            lostPawn = self.b[space.x][piece.y]
+            
+        # if it's a promotion, get the piece that it's promoting to, defaulting to queen
+        if unit * turn == Pawn and (space.y == 0 or space.y == 7):
+            promotion = self.get_promotion() * turn
+
+        # decode ambiguity for string
+        save = []
+        for possible in space.canMoveTo:
+            if possible.unit == piece.unit and possible != piece:
+                save.append(possible)
+        saveLen = len(save)
+        if saveLen == 1:
+            if save[0].x == piece.x:
+                ambiguity = y_char(piece.y)
+            else:
+                ambiguity = x_char(piece.x)
+        elif saveLen > 1:      
+            for possible in save:                
+                if possible.y == piece.y:
                     ambiguity = x_char(piece.x)
-            elif saveLen > 1:      
-                for possible in save:                
-                    if possible.y == piece.y:
-                        ambiguity = x_char(piece.x)
-                        break
-                for possible in save:    
-                    if possible.x == piece.x:
-                        ambiguity += y_char(piece.y)
-                        break
-            
-            # actually move the piece
-            if capture:
-                self.remove(space)
-            elif enpassant:
-                self.remove(lostPawn)
-                
-            if promotion:
-                self.put(promotion, space)
-            else:
-                self.put(unit, space)
+                    break
+            for possible in save:    
+                if possible.x == piece.x:
+                    ambiguity += y_char(piece.y)
+                    break
+        
+        # calculate adds and removes
+        if capture:
+            removes = [(unit, piece), (captured, space)]
+        elif enpassant:
+            removes = [(unit, piece), (-unit, lostPawn)]
+        else:
+            removes = [(unit, piece)]
+        
+        if promotion:
+            adds = [(promotion, space)]
+        else:
+            adds = [(unit, space)]
+        
+        # build the string
+        string = self.move_string(unit, space, capture, promotion, ambiguity, enpassant)
+        
+        return adds, removes, string
+
+    # actually put and remove pieces
+    def enact(self, adds, removes):
+        for unit, piece in removes:
             self.remove(piece)
-            
-            
-            
-            # if puts self in check, disallow it
-            if self.hypothetical_threat(army[King][0]):
-                self.remove(space)                
-                self.put(unit, piece)
-                if capture:
-                    self.put(captured, space)
-                elif enpassant:
-                    self.put(-unit, lostPawn)
-                raise MoveError("This would put yourself in check!")
-            
-            # save the history
-            if capture:
-                self.lastCapture = self.count
-                self.removes.append([(unit, piece), (captured, space)])
-            elif enpassant:
-                self.removes.append([(unit, piece), (-unit, lostPawn)])
-            else:
-                self.removes.append([(unit, piece)])
-            
-            if promotion:
-                self.adds.append([(promotion, space)])
-            else:
-                self.adds.append([(unit, space)])
+        for unit, piece in adds:
+            self.put(unit, piece)
+        return        
+    
+    # takes adds, removes, and a string, and attempts to execute it. if successful, will update everything
+    def execute(self, adds, removes, s):
+        turn = self.whose_turn()
+        if turn == W:
+            army = self.white
+        else:
+            army = self.black
+        check = False
+        noMoves = False
         
+        # actually move around the pieces
+        self.enact(adds, removes)
+
+        # if puts self in check, disallow
+        # TODO: this can be taken care of once legal moves is counted
+        if self.hypothetical_threat(army[King][0]):
+            self.enact(removes, adds)
+            raise MoveError("This would put yourself in check!")
         
-        # at this point, the move is legal, and the pieces have been moved, and history has been recorded
-        self.count += 1        
+        # it's been allowed and enacted
+        self.count += 1
+        self.adds.append(adds)
+        self.removes.append(removes)
         game.update_moves()
         
+        # TODO: reextract if it was a capture. maybe from the string?
+        if 'x' in s:
+            self.lastCapture = self.count
+            
         if self.is_check():
             check = True
-        # TODO: if mate
+        if len(self.legalMoves) == 0:
+            noMoves = True
+        
+        self.log.append(s)
+        print s
         
         # draw if only kings left
         stalemate = True
@@ -733,21 +745,19 @@ class Game():
         if self.count - self.lastCapture > 100:
             stalemate = True
             
-        # TODO: threefold repetition
-        
-        # build the string and save it
-        string = self.move_string(piece, space, capture, check, mate, kCastle, qCastle, promotion, ambiguity, enpassant)
-        self.log.append(string)
-        print string
+        # TODO: threefold repetition        
 
-        if check:
-            return check * turn
-        elif mate:
-            return mate * turn
+        if check and noMoves:
+            return Wins * turn
+        elif check:
+            return Checks * turn
+        elif noMoves:
+            return Stalemate
         elif stalemate:
             return Stalemate
         else:
             return Ok
+            
     
     def undo_move(self):
         if self.count == 0:
@@ -786,17 +796,11 @@ class Game():
                 raise ValueError
         except ValueError:
             raise ValueError # lol
-    def move_string(self, piece, space, capture = False, check = False, mate = False, kscastle = False, qscastle = False, promotion = No, ambiguity = "", enpassant = False):
+    def move_string(self, unit, space, capture, promotion, ambiguity, enpassant):
         string = ""
-        unit = abs(space.unit)
-        # if castles, just start with that
-        if kscastle:
-            string = "0-0"
-        elif qscastle:
-            string = "0-0-0"
-        
+        unit = abs(unit)
         # if pawn capturing or enpassanting, need letter
-        elif unit == Pawn and (capture or enpassant):
+        if unit == Pawn and (capture or enpassant):
             string = x_char(piece.x)
         # any other piece takes letter
         else:
@@ -811,20 +815,13 @@ class Game():
             string += "x"
         
         # add the coordinate
-        if not kscastle and not qscastle:
-            string += space.coord_string()
+        string += space.coord_string()
         
         # if it's a promotion, add the piece identity
         if promotion != No:
             string += "=" + unit_char(promotion)
         elif enpassant:
             string += "e.p."
-        
-        # if mate or check, add appropriate symbol
-        if mate:
-            string += "#"
-        elif check:
-            string += "+"
         
         return string
 
@@ -903,11 +900,6 @@ game.put(WKing, three)
 game.put(BKnight, game.b[6][1])
 game.put(BPawn, four)
 game.put(BPawn, game.b[5][1])
-for i in range(1):
-    game.execute_move(three, four)
-    game.execute_move(one, two)
-    game.execute_move(four, three)
-    game.execute_move(two, one)
 """
 
 game.update_moves()
@@ -922,15 +914,8 @@ while True:
         except MoveError, (instance):
             print instance.parameter
     elif string == "list":
-        army = game.black
-        if game.whose_turn() == W:
-            army = game.white
-        for ls in army:
-            for piece in ls:
-                line = unit_string(piece.unit) + " at " + piece.coord_string() + " can move to "
-                for space in piece.moves:
-                    line += space.coord_string() + ","
-                print line
+        for piece, space in game.legalMoves:
+            print unit_string(piece.unit) + " at " + piece.coord_string() + " to " + space.coord_string()
     elif string == "moves":
         coordStr = raw_input("which coordinate? ")
         piece = game.parse_coord(coordStr)
@@ -969,11 +954,24 @@ while True:
                 line = ""
         if game.count % 2:
             print line
+    elif string == "reset":
+        game = Game()
+        game.fill_board()
+        game.update_moves()
     else:
         try:
             piece, space = game.parse_move(string)
-            state = game.execute_move(piece, space)
+            adds, removes, s = game.convert_move(piece, space)
+            state = game.execute(adds, removes, s)
             if state == Stalemate:
                 print "well shit. it's a stalemate"
+            elif state == WWins:
+                print "white wins"
+            elif state == BWins:
+                print "black wins"
+            elif state == WChecks:
+                print "white is checking"
+            elif state == BChecks:
+                print "black is checking"
         except MoveError, (instance):
             print instance.parameter
