@@ -549,11 +549,11 @@ class Game():
                                         save.append((pawn, space))
                         saveLen = len(save)
                         if saveLen < 1:
-                            raise MoveError("there's no Pawn in " + x_char(home) + " that can capture to " + x_char(target))
+                            raise MoveError("there's no Pawn in " + x_char(home) + " that moves to " + x_char(target))
                         elif saveLen == 1:
                             return save[0][0], save[0][1]
                         elif saveLen > 1:
-                            raise MoveError("remarkably, there's more than one Pawn in " + x_char(home) + " that can capture to " + x_char(target)) 
+                            raise MoveError("that's an ambiguous pawn move from " + x_char(home) + " to " + x_char(target)) 
                     except ValueError:
                         raise MoveError("couldn't parse a move your input!")
                     raise MoveError("couldn't parse a move from your input!")
@@ -779,9 +779,6 @@ class Game():
             string += "+"        
         self.log.append(string)
 
-        # TODO: remove once game engine has been cleaned up
-        print string
-
         return state
             
     # reverts a move, returning game state raising MoveError if can't undo (nothing to undo)
@@ -969,7 +966,16 @@ game.execute(game.b[2][5], game.b[1][7])
 
 while True:
     game.print_board()
-    input = raw_input("Command: ")
+    if game.count > 0:
+        line = "Previous: "
+        line += str(int((game.count + 1)/ 2))
+        if game.get_turn() == W:
+            line += "... "
+        else:
+            line += ". "
+        line += game.log[game.count - 1]
+        print line
+    input = raw_input(" Command: ")
     if input == "quit" or input == "exit" or input == "q":
         exit()
     elif input == "reset":
@@ -1040,6 +1046,7 @@ while True:
             state = game.execute(piece, space)
         except MoveError, (instance):
             print instance.parameter
+    
     
     if state == WWins:
         print "White wins! 'quit' or 'reset'"
