@@ -2,8 +2,16 @@
 chess.py
 
 Peter Hung
-060612-
-for shits and giggles
+060612-061512
+
+a chess engine and parser
+for now, asks for text-inputted moves per player and prints board to console.
+the game fully implemented, including all special moves and draw conditions
+the parser is robust and attempts to extract algebraic notation out of input
+  e.g. e4, Nxc3, Qf5+, Rae8, O-O
+stores generous amounts of extra informtion in a board object per turn,
+  meant to be the basis for an AI
+
 """
 
 import unittest
@@ -555,7 +563,7 @@ class Game():
                         elif saveLen > 1:
                             raise MoveError("that's an ambiguous pawn move from " + x_char(home) + " to " + x_char(target)) 
                     except ValueError:
-                        raise MoveError("couldn't parse a move your input!")
+                        raise MoveError("couldn't parse a move from your input!")
                     raise MoveError("couldn't parse a move from your input!")
 
         # if the only coordinate is the first chars, assume that it's a pawn moving forward
@@ -929,40 +937,7 @@ class Game():
         
 game = Game()
 game.fill_board()
-
-""" 
-# disambiguity checking
-game.put(WKnight, game.b[0][0])
-game.put(WKnight, game.b[0][2])
-game.put(WKnight, game.b[4][0])
-"""
-
-"""
-# stalemate checking
-one = game.b[7][7]
-two = game.b[7][6]
-three = game.b[7][0]
-four = game.b[7][1]
-game.put(BKing, one)
-game.put(WKing, three)
-game.put(BKnight, game.b[6][1])
-game.put(BPawn, four)
-game.put(BPawn, game.b[5][1])
-"""
-
 state = game.update()
-
-"""
-# stalemate by threefold repeat
-game.execute(game.b[6][0], game.b[5][2])
-game.execute(game.b[6][7], game.b[5][5])
-game.execute(game.b[5][2], game.b[6][0])
-game.execute(game.b[5][5], game.b[6][7])
-game.execute(game.b[1][0], game.b[2][2])
-game.execute(game.b[1][7], game.b[2][5])
-game.execute(game.b[2][2], game.b[1][0])
-game.execute(game.b[2][5], game.b[1][7])
-"""
 
 while True:
     game.print_board()
@@ -978,6 +953,8 @@ while True:
     input = raw_input(" Command: ")
     if input == "quit" or input == "exit" or input == "q":
         exit()
+    elif input == "help":
+        print "Input: algebraic notation, 'undo', 'resign', 'list', 'history', 'moves', 'quit'"
     elif input == "reset":
         game = Game()
         game.fill_board()
@@ -1025,7 +1002,7 @@ while True:
         for index in range(length):
             piece, space = game.legalMoves[index]
             print str(index + 1) + ": " + unit_string(piece.unit) + " at " + piece.coord_string() + " to " + space.coord_string()
-        numStr = raw_input("which move? ")
+        numStr = raw_input("which move number? ")
         try:
             num = int(numStr)
             if num > 0 and num <= length:
